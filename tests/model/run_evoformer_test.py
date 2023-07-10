@@ -1,4 +1,10 @@
-# Example usage: CUTLASS_PATH=~/cutlass python run_evoformer_test.py
+"""
+This script is to test the correctness of the EvoformerAttention op.
+To run the script,
+1. Clone the CUTLASS repo. E.g. git clone https://github.com/NVIDIA/cutlass.git
+2. Specify the CUTLASS_PATH environment variable. E.g. export CUTLASS_PATH=$(pwd)/cutlass
+3. Run the script. E.g. python run_evoformer_test.py
+"""
 
 import torch
 from typing import List
@@ -66,7 +72,6 @@ ref_dq, Q.grad = Q.grad.clone(), None
 ref_db1, bias1.grad = bias1.grad.clone(), None
 ref_db2, bias2.grad = bias2.grad.clone(), None
 
-# out = EvoformerFusedAttention.apply(Q, K, V, bias1, bias2)
 out = EvoformerAttention(Q, K, V, [bias1, bias2])
 out.backward(dout)
 dv, v_grad = V.grad.clone(), None

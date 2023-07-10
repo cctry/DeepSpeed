@@ -1,5 +1,6 @@
 from .builder import CUDAOpBuilder
 import os
+import yaml
 
 class EvoformerAttnBuilder(CUDAOpBuilder):
     BUILD_VAR = "DS_BUILD_RANDOM_LTD"
@@ -27,7 +28,11 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
         ]
 
     def include_paths(self):
-        cutlass_path = os.environ.get('CUTLASS_PATH', "cutlass")
+        cutlass_path = os.environ.get('CUTLASS_PATH')
+        assert cutlass_path is not None, "Please set CUTLASS_PATH to the path of cutlass"
+        with open(f'{cutlass_path}/CITATION.cff', 'r') as f:
+            version = yaml.safe_load(f)['version']
+            assert int(version.split('.')[0]) >= 3, "Please use cutlass version >= 3.0.0"
         includes = [f'{cutlass_path}/include', f'{cutlass_path}/tools/util/include']
         if self.is_rocm_pytorch():
             from torch.utils.cpp_extension import ROCM_HOME
