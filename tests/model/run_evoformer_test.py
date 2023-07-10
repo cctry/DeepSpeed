@@ -51,18 +51,18 @@ def attention(q_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
 dtype = torch.float16
 
 batch = 1
-N = 256 # 512 ~ 5120
+N = 256
 heads = 4
 dim = 32
-seq_len = 256 # 256 ~ 384
-Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda", requires_grad=True)
-bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda", requires_grad=True)
+seq_len = 256
 
 
-def correctness_test(Q, K, V, bias1, bias2):
+def correctness_test():
+    Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+    K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+    V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+    bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda", requires_grad=True)
+    bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda", requires_grad=True)
     dout = torch.rand_like(Q, dtype=dtype, device="cuda")
     ref_out = attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
     ref_out.backward(dout)
@@ -98,22 +98,22 @@ def benchmark():
         bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda")
         bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda")
         # warm up
-        out = EvoformerAttention(Q, K, V, [bias1, bias2])
+        EvoformerAttention(Q, K, V, [bias1, bias2])
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
         for _ in range(5):
-            out = EvoformerAttention(Q, K, V, [bias1, bias2])
+            EvoformerAttention(Q, K, V, [bias1, bias2])
         end.record()
         torch.cuda.synchronize()
         ours.append(start.elapsed_time(end) / 5)
         # warm up
-        ref_out = attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+        attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
         for _ in range(5):
-            ref_out = attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+            attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
         end.record()
         torch.cuda.synchronize()
         baseline.append(start.elapsed_time(end) / 5)
@@ -122,5 +122,5 @@ def benchmark():
     for i in range(len(ours)):
         print(f"{i+1}\t{ours[i]}\t{baseline[i]}")
         
-correctness_test(Q, K, V, bias1, bias2)
+correctness_test()
 benchmark()

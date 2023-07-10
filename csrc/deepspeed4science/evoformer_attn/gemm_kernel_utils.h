@@ -33,14 +33,14 @@
 
 #include "cutlass/arch/mma.h"
 
-#define DISPATCH_ARCHTAG(CC, func)                                         \
-    {                                                                      \
-        if (CC >= 80) {                                             \
-            using ArchTag = cutlass::arch::Sm80;                           \
-            func;                                                          \
-        } else {                                                           \
-            EVOFORMER_CHECK(false, "We require compute capability to be 80"); \
-        }                                                                  \
+#define DISPATCH_ARCHTAG(CC, func)                                        \
+    {                                                                     \
+        if (CC >= 80) {                                                   \
+            using ArchTag = cutlass::arch::Sm80;                          \
+            func;                                                         \
+        } else {                                                          \
+            EVOFORMER_CHECK(false, "Only A100 GPU is supported for now"); \
+        }                                                                 \
     }
 
 #define DISPATCH_TYPES(tensor, func)                                              \
