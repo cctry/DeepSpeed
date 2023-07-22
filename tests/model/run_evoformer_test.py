@@ -9,7 +9,7 @@ To run the script,
 import torch
 from typing import List
 from torch.nn import functional as F
-from deepspeed.ops.deepspeed4science import EvoformerAttention
+from deepspeed.ops.deepspeed4science import Ds4Sci_EvoformerAttention
 
 
 def attention(q_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
