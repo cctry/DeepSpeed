@@ -1,5 +1,5 @@
 """
-This script is to test the correctness of the EvoformerAttention op.
+This script is to test the correctness of the DS4Sci_EvoformerAttention op.
 To run the script,
 1. Clone the CUTLASS repo. E.g. git clone https://github.com/NVIDIA/cutlass.git
 2. Specify the CUTLASS_PATH environment variable. E.g. export CUTLASS_PATH=$(pwd)/cutlass
@@ -9,10 +9,10 @@ To run the script,
 import torch
 from typing import List
 from torch.nn import functional as F
-from deepspeed.ops.deepspeed4science import Ds4Sci_EvoformerAttention
+from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 
-def attention(q_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
+def attention_reference(q_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
               k_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
               v_input: torch.Tensor,  # [*, Dim_Q, H, C_hid]
               biases: List[torch.Tensor],
@@ -64,7 +64,7 @@ def correctness_test():
     bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda", requires_grad=True)
     bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda", requires_grad=True)
     dout = torch.rand_like(Q, dtype=dtype, device="cuda")
-    ref_out = attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+    ref_out = attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
     ref_out.backward(dout)
     ref_dv, V.grad = V.grad.clone(), None
     ref_dk, K.grad = K.grad.clone(), None
@@ -72,7 +72,7 @@ def correctness_test():
     ref_db1, bias1.grad = bias1.grad.clone(), None
     ref_db2, bias2.grad = bias2.grad.clone(), None
 
-    out = EvoformerAttention(Q, K, V, [bias1, bias2])
+    out = DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
     out.backward(dout)
     dv, v_grad = V.grad.clone(), None
     dk, k_grad = K.grad.clone(), None
@@ -98,22 +98,22 @@ def benchmark():
         bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda")
         bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda")
         # warm up
-        EvoformerAttention(Q, K, V, [bias1, bias2])
+        DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
         for _ in range(5):
-            EvoformerAttention(Q, K, V, [bias1, bias2])
+            DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
         end.record()
         torch.cuda.synchronize()
         ours.append(start.elapsed_time(end) / 5)
         # warm up
-        attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+        attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
         for _ in range(5):
-            attention(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+            attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
         end.record()
         torch.cuda.synchronize()
         baseline.append(start.elapsed_time(end) / 5)
