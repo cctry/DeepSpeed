@@ -77,7 +77,7 @@ class EvoformerFusedAttention(torch.autograd.Function):
             dB2 = None
         return dQ, dK, dV, dB1, dB2
     
-def Ds4Sci_EvoformerAttention(Q, K, V, biases):
+def DS4Sci_EvoformerAttention(Q, K, V, biases):
     assert len(biases) <= 2
 
     if(len(biases) == 0):
