@@ -31,16 +31,34 @@
 
 #pragma once
 
+#include <type_traits>
 #include "cutlass/arch/mma.h"
 
-#define DISPATCH_ARCHTAG(CC, func)                                        \
-    {                                                                     \
-        if (CC >= 80) {                                                   \
-            using ArchTag = cutlass::arch::Sm80;                          \
-            func;                                                         \
-        } else {                                                          \
-            EVOFORMER_CHECK(false, "Only A100 GPU is supported for now"); \
-        }                                                                 \
+template <typename arch, typename scalar_t>
+struct CheckArch {
+    static constexpr bool isPreVolta = arch::kMinComputeCapability < 70;
+    static constexpr bool isPreAmpere =
+        arch::kMinComputeCapability < 80 && arch::kMinComputeCapability >= 70;
+    static constexpr bool isAmpere = arch::kMinComputeCapability >= 80;
+    static constexpr bool value = (isPreVolta && std::is_same_v<scalar_t, float>) ||
+                                  (isPreAmpere && !std::is_same_v<scalar_t, cutlass::bfloat16_t>) ||
+                                  isAmpere;
+};
+
+#define DISPATCH_ARCHTAG(CC, func)                                                      \
+    {                                                                                   \
+        if (CC >= 80) {                                                                 \
+            using ArchTag = cutlass::arch::Sm80;                                        \
+            func;                                                                       \
+        } else if (CC >= 75) {                                                          \
+            using ArchTag = cutlass::arch::Sm75;                                        \
+            func;                                                                       \
+        } else if (CC >= 70) {                                                          \
+            using ArchTag = cutlass::arch::Sm70;                                        \
+            func;                                                                       \
+        } else {                                                                        \
+            EVOFORMER_CHECK(false, "Only GPUs with Tensor Core are supported for now"); \
+        }                                                                               \
     }
 
 #define DISPATCH_TYPES(tensor, func)                                              \
@@ -87,7 +105,8 @@
     }
 #define EVOFORMER_CHECK(COND, ERR)                          \
     if (!(COND)) {                                          \
-        std::cerr << "'" #COND "' failed: " << ERR << "\n"; \
+        std::cerr << "[Evoformer Attention]"                \
+                  << "'" #COND "' failed: " << ERR << "\n"; \
         return false;                                       \
     }
 #endif

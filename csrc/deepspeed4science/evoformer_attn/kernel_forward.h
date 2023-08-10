@@ -437,7 +437,8 @@ struct AttentionKernel {
     struct SharedStorageAfterMM0 {
       // Everything here might be overwritten during MM0
       union {
-        typename MM0::BiasLoader::SmemTile bias;
+        // typename MM0::BiasLoader::SmemTile bias;
+        cutlass::AlignedBuffer<float, MM0::BiasLoader::Shape::kCount> bias;
         typename MM0::AccumulatorSharedStorage si;
       };
       typename MM1::SharedStorageMM1 mm1;

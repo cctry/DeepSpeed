@@ -34,7 +34,5 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
             version = yaml.safe_load(f)['version']
             assert int(version.split('.')[0]) >= 3, "Please use CUTLASS version >= 3.0.0"
         includes = [f'{cutlass_path}/include', f'{cutlass_path}/tools/util/include']
-        if self.is_rocm_pytorch():
-            from torch.utils.cpp_extension import ROCM_HOME
-            includes += ['{}/hiprand/include'.format(ROCM_HOME), '{}/rocrand/include'.format(ROCM_HOME)]
+        assert not self.is_rocm_pytorch(), "CUTLASS is not supported on ROCm"
         return includes

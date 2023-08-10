@@ -982,7 +982,7 @@ struct AttentionBackwardKernel {
         // part2 - compute gradV
         union {
           // 1. efficient load of bias tile Bij, which is then applied to Pij
-          typename MatmulQK::BiasLoader::SmemTile bias;
+          cutlass::AlignedBuffer<float, MatmulQK::BiasLoader::Shape::kCount> bias;
           // 2. store Pij to shared memory. it is needed:
           // - in this step, where it is used in dVj += (Pij.T * Zij) @ dOi
           // - in next step where it is used in dSij = Pij * (dPij - Di)
@@ -1671,10 +1671,10 @@ struct AttentionBackwardKernel {
         using DefaultGemm = typename MatmulDOIVJ::DefaultGemm;
         using OutputOp = typename MatmulDOIVJ::BiasGradEpilogueOutputOp;              
         if (broadcast_1::kEnable && p.grad_bias1_ptr) {
-          using Epilogue = typename cutlass::epilogue::threadblock::EpilogueTensorOpAffineRankN<
-                2, typename MatmulDOIVJ::ThreadblockShape,
-               typename DefaultGemm::Mma::Operator, DefaultGemm::kPartitionsK, 
-               OutputOp, OutputOp::kCount>::Epilogue;
+          using Epilogue = typename BiasGradEpilogueAffineRankN<
+              ArchTag, 2, typename MatmulDOIVJ::ThreadblockShape,
+              typename DefaultGemm::Mma::Operator, DefaultGemm::kPartitionsK,
+              OutputOp, OutputOp::kCount>::Epilogue;
           cutlass::layout::AffineRankN<2> layout({0, 1});
           auto dst_ptr = p.grad_bias1_ptr + key_start;
           typename Epilogue::OutputTileIterator output_iter({layout}, dst_ptr, 
@@ -1687,9 +1687,10 @@ struct AttentionBackwardKernel {
           if (broadcast_1::kEnable) {
             __syncthreads();
           }
-          using Epilogue = typename cutlass::epilogue::threadblock::EpilogueTensorOp<
-               typename MatmulDOIVJ::ThreadblockShape, typename DefaultGemm::Mma::Operator, 
-               DefaultGemm::kPartitionsK, OutputOp, OutputOp::kCount>::Epilogue;
+          using Epilogue = typename BiasGradEpilogue<
+               ArchTag, typename MatmulDOIVJ::ThreadblockShape,
+               typename DefaultGemm::Mma::Operator, DefaultGemm::kPartitionsK, 
+               OutputOp, OutputOp::kCount>::Epilogue;
           typename Epilogue::OutputTileIterator::Params params{p.num_keys};
           auto dst_ptr = p.grad_bias2_ptr + query_start * p.num_keys + key_start;
           typename Epilogue::OutputTileIterator output_iter(params, dst_ptr, 

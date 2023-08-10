@@ -15,20 +15,47 @@ template <typename arch,
           class Broadcast1_,
           template <typename, typename, typename>
           class Broadcast2_>
-void attention_back_impl_template(torch::Tensor& go,
-                                  torch::Tensor& q,
-                                  torch::Tensor& k,
-                                  torch::Tensor& v,
-                                  torch::Tensor& o,
-                                  torch::Tensor& lse,
-                                  torch::Tensor& delta,
-                                  torch::Tensor& bias1,
-                                  torch::Tensor& bias2,
-                                  torch::Tensor& gq,
-                                  torch::Tensor& gk,
-                                  torch::Tensor& gv,
-                                  torch::Tensor& gb1,
-                                  torch::Tensor& gb2)
+typename std::enable_if<!CheckArch<arch, scalar_t>::value>::type attention_back_impl_template(
+    torch::Tensor& go,
+    torch::Tensor& q,
+    torch::Tensor& k,
+    torch::Tensor& v,
+    torch::Tensor& o,
+    torch::Tensor& lse,
+    torch::Tensor& delta,
+    torch::Tensor& bias1,
+    torch::Tensor& bias2,
+    torch::Tensor& gq,
+    torch::Tensor& gk,
+    torch::Tensor& gv,
+    torch::Tensor& gb1,
+    torch::Tensor& gb2)
+{
+    EVOFORMER_CHECK(false, "Unsupported GPU and data type combination")
+}
+
+template <typename arch,
+          typename scalar_t,
+          typename torch_scalar_t,
+          template <typename, typename, typename>
+          class Broadcast1_,
+          template <typename, typename, typename>
+          class Broadcast2_>
+typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_back_impl_template(
+    torch::Tensor& go,
+    torch::Tensor& q,
+    torch::Tensor& k,
+    torch::Tensor& v,
+    torch::Tensor& o,
+    torch::Tensor& lse,
+    torch::Tensor& delta,
+    torch::Tensor& bias1,
+    torch::Tensor& bias2,
+    torch::Tensor& gq,
+    torch::Tensor& gk,
+    torch::Tensor& gv,
+    torch::Tensor& gb1,
+    torch::Tensor& gb2)
 {
     constexpr bool kPreload_ = arch::kMinComputeCapability >= 80;
     using Kernel = AttentionBackwardKernel<arch,
@@ -181,13 +208,6 @@ void attention_back_impl(torch::Tensor& go,
                          torch::Tensor& gb2)
 {
     cudaDeviceProp* prop = at::cuda::getCurrentDeviceProperties();
-    DISPATCH_ARCHTAG(
-        prop->major * 10 + prop->minor,
-        DISPATCH_TYPES(
-            q,
-            ([&]() {
-                CODE(scalar_t, torch_scalar_t);
-            })
-        )
-    );
+    DISPATCH_ARCHTAG(prop->major * 10 + prop->minor,
+                     DISPATCH_TYPES(q, ([&]() { CODE(scalar_t, torch_scalar_t); })));
 }

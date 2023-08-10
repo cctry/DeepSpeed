@@ -11,13 +11,33 @@ template <typename arch,
           class Broadcast1_,
           template <typename, typename, typename>
           class Broadcast2_>
-void attention_impl_template(torch::Tensor& q,
-                             torch::Tensor& k,
-                             torch::Tensor& v,
-                             torch::Tensor& bias1,
-                             torch::Tensor& bias2,
-                             torch::Tensor& o,
-                             float* lse_ptr)
+typename std::enable_if<!CheckArch<arch, scalar_t>::value>::type attention_impl_template(
+    torch::Tensor& q,
+    torch::Tensor& k,
+    torch::Tensor& v,
+    torch::Tensor& bias1,
+    torch::Tensor& bias2,
+    torch::Tensor& o,
+    float* lse_ptr)
+{
+    EVOFORMER_CHECK(false, "Unsupported GPU and data type combination")
+}
+
+template <typename arch,
+          typename scalar_t,
+          typename torch_scalar_t,
+          template <typename, typename, typename>
+          class Broadcast1_,
+          template <typename, typename, typename>
+          class Broadcast2_>
+typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_impl_template(
+    torch::Tensor& q,
+    torch::Tensor& k,
+    torch::Tensor& v,
+    torch::Tensor& bias1,
+    torch::Tensor& bias2,
+    torch::Tensor& o,
+    float* lse_ptr)
 {
     // Attention definition goes here, replaced with BroadcastType1 and
     // BroadcastType2
@@ -130,13 +150,6 @@ void attention_impl(torch::Tensor& q,
 {
     auto lse_ptr = lse.size(0) == 0 ? nullptr : reinterpret_cast<float*>(lse.data_ptr<float>());
     cudaDeviceProp* prop = at::cuda::getCurrentDeviceProperties();
-    DISPATCH_ARCHTAG(
-        prop->major * 10 + prop->minor,
-        DISPATCH_TYPES(
-            q,
-            ([&]() {
-                CODE(scalar_t, torch_scalar_t);
-            })
-        )
-    );
+    DISPATCH_ARCHTAG(prop->major * 10 + prop->minor,
+                     DISPATCH_TYPES(q, ([&]() { CODE(scalar_t, torch_scalar_t); })));
 }
