@@ -1,3 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: Apache-2.0
+
+# DeepSpeed Team
+
 """
 This script is to test the correctness of the DS4Sci_EvoformerAttention op.
 To run the script,
