@@ -1,8 +1,13 @@
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/extension.h>
 #include "gemm_kernel_utils.h"
 #include "kernel_forward.h"
-#include "transform/tile_smem_loader.h"
+#include "transform/bias_broadcast.h"
 
 template <typename arch,
           typename scalar_t,

@@ -1,3 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #include <torch/extension.h>
  
 void attention_impl(torch::Tensor &q, torch::Tensor &k, torch::Tensor &v,

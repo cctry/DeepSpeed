@@ -1,3 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# SPDX-License-Identifier: Apache-2.0
+
+# DeepSpeed Team
+
 import torch
 import numpy as np
 from deepspeed.ops.op_builder import EvoformerAttnBuilder

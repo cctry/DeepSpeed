@@ -29,6 +29,11 @@
  *
  **************************************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #pragma once
 
 #include <cmath>
@@ -74,6 +79,7 @@
 #include "gemm/mma_accum_lambda_iterator.h"
 #include "gemm/mma_from_smem.h"
 #include "transform/tile_smem_loader.h"
+#include "transform/bias_broadcast.h"
 #include "epilogue/epilogue_grad_bias.h"
 
 #include <inttypes.h>

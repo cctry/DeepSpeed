@@ -1,3 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #pragma once
 #include "../iterators/predicated_tile_iterator_atomic.h"
 #include "cutlass/epilogue/threadblock/epilogue.h"
