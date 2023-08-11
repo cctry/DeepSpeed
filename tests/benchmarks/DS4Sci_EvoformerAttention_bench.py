@@ -11,6 +11,7 @@ To run the script,
 3. Run the script. E.g. python run_evoformer_test.py
 """
 
+import contextlib
 import torch
 from typing import List
 from torch.nn import functional as F
@@ -92,40 +93,44 @@ def correctness_test():
     assert torch.allclose(ref_db1, db1, atol=2e-2, rtol=1e-2), f"{ref_db1} \n {db1}"
     assert torch.allclose(ref_db2, db2, atol=2e-2, rtol=1e-2), f"{ref_db2} \n {db2}"
 
+@contextlib.contextmanager
+def cuda_timer(res_list):
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    yield
+    end.record()
+    torch.cuda.synchronize()
+    res_list.append(start.elapsed_time(end))
 
 def benchmark():
-    ours = []
-    baseline = []
+    ours_fw = []
+    ours_bw = []
+    baseline_fw = []
+    baseline_bw = []
     for batch_size in range(1, 17):
-        Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda")
-        K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda")
-        V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda")
-        bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda")
-        bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda")
+        Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+        K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+        V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
+        bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda", requires_grad=True)
+        bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda", requires_grad=True)
         # warm up
         DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        for _ in range(5):
-            DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
-        end.record()
-        torch.cuda.synchronize()
-        ours.append(start.elapsed_time(end) / 5)
+        with cuda_timer(ours_fw):
+            out = DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
+        d_out = torch.rand_like(out)
+        with cuda_timer(ours_bw):
+            out.backward(d_out)
         # warm up
         attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
-        for _ in range(5):
-            attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
-        end.record()
-        torch.cuda.synchronize()
-        baseline.append(start.elapsed_time(end) / 5)
+        with cuda_timer(baseline_fw):
+            ref_out = attention_reference(Q, K, V, [bias1, bias2], 1 / (dim ** 0.5))
+        with cuda_timer(baseline_bw):
+            ref_out.backward(d_out)
     
-    print(f"batch size\tours\tbaseline")
-    for i in range(len(ours)):
-        print(f"{i+1}\t{ours[i]}\t{baseline[i]}")
+    print(f"batch size\tours (FW)\tbaseline (FW)\tours (BW)\tbaseline (BW)")
+    for i in range(len(ours_fw)):
+        print(f"{i+1}\t{ours_fw[i]}\t{baseline_fw[i]}\t{ours_bw[i]}\t{baseline_bw[i]}")
         
 correctness_test()
 benchmark()
