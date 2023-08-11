@@ -383,17 +383,8 @@ struct AttentionBackwardKernel {
                                          head_id, strideB, 0, strideH);
       }
 
-      head_dim = warp_uniform(head_dim);
-      head_dim_value = warp_uniform(head_dim_value);
       num_queries = warp_uniform(num_queries);
       num_keys = warp_uniform(num_keys);
-      num_heads = warp_uniform(num_heads);
-
-      gO_strideM = warp_uniform(gO_strideM);
-      gQKV_strideM_multiplier = warp_uniform(gQKV_strideM_multiplier);
-      q_strideM = warp_uniform(q_strideM);
-      k_strideM = warp_uniform(k_strideM);
-      v_strideM = warp_uniform(v_strideM);
 
       query_ptr = warp_uniform(query_ptr);
       key_ptr = warp_uniform(key_ptr);
@@ -424,7 +415,7 @@ struct AttentionBackwardKernel {
       return dim3(1, num_heads, num_batches);
     }
     __host__ dim3 getThreadsGrid() const {
-      return dim3(kWarpSize, kNumWarpsPerBlock, 1);
+      return dim3(kWarpSize * kNumWarpsPerBlock, 1, 1);
     }
     CUTLASS_HOST_DEVICE int64_t workspace_elements_gk() const {
       if (!kNeedsAccumGradK) {
@@ -1189,12 +1180,16 @@ struct AttentionBackwardKernel {
     return true;
   }
 
-  static CUTLASS_DEVICE void attention_kernel(Params const& p) {
+  static CUTLASS_DEVICE void attention_kernel(Params p) {
     extern __shared__ char smem_buffer[];
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
 
+    uint16_t thread_id = threadIdx.x;
+    uint8_t warp_id = warp_uniform(thread_id / 32);
+    uint8_t lane_id = thread_id % 32;
+
     if (kPrologueQK) {
-      prologueQkNextIteration<true>(shared_storage, p, 0, 0);
+      prologueQkNextIteration<true>(shared_storage, p, 0, 0, warp_id, lane_id);
     }
 
     // Computes (dO*out).sum(-1) and writes it to `p.delta_ptr`
@@ -1204,12 +1199,12 @@ struct AttentionBackwardKernel {
       if (p.head_dim_value % kOptimalElements == 0) {
         for (int query_start = 0; query_start < p.num_queries;
              query_start += kBlockSizeI) {
-          computeDelta<kOptimalElements>(p, query_start);
+          computeDelta<kOptimalElements>(p, query_start, warp_id, lane_id);
         }
       } else {
         for (int query_start = 0; query_start < p.num_queries;
              query_start += kBlockSizeI) {
-          computeDelta<1>(p, query_start);
+          computeDelta<1>(p, query_start, warp_id, lane_id);
         }
       }
       __syncthreads();
@@ -1230,7 +1225,7 @@ struct AttentionBackwardKernel {
             output_frags,
             p,
             query_start,
-            key_start);
+            key_start, warp_id, lane_id);
       }
       // last (partial) query
       if (query_start < p.num_queries) {
@@ -1239,12 +1234,12 @@ struct AttentionBackwardKernel {
             output_frags,
             p,
             query_start,
-            key_start);
+            key_start, warp_id, lane_id);
       }
       if (kOutputInRF) {
-        writeFragsToGmem<true>(shared_storage, output_frags, p, key_start);
+        writeFragsToGmem<true>(shared_storage, output_frags, p, key_start, warp_id, lane_id);
       } else if (getQueryStart(p, key_start) >= p.num_queries) {
-        zfillGradKV<true>(p, key_start);
+        zfillGradKV<true>(p, key_start, warp_id, lane_id);
       }
       __syncthreads();
     }
@@ -1253,17 +1248,20 @@ struct AttentionBackwardKernel {
       output_frags.clear();
       int32_t query_start = getQueryStart(p, key_start);
       for (; query_start < p.num_queries; query_start += kBlockSizeI) {
+        warp_id = warp_uniform(warp_id);
         processBlockIJ<false>(
             shared_storage,
             output_frags,
             p,
             query_start,
-            key_start);
+            key_start,
+            warp_id,
+            lane_id);
       }
       if (kOutputInRF) {
-        writeFragsToGmem<false>(shared_storage, output_frags, p, key_start);
+        writeFragsToGmem<false>(shared_storage, output_frags, p, key_start, warp_id, lane_id);
       } else if (getQueryStart(p, key_start) >= p.num_queries) {
-        zfillGradKV<false>(p, key_start);
+        zfillGradKV<false>(p, key_start, warp_id, lane_id);
       }
     }
   }
@@ -1283,16 +1281,15 @@ struct AttentionBackwardKernel {
   }
 
   template <bool skipBoundsChecks>
-  static CUTLASS_DEVICE void zfillGradKV(Params const& p, int32_t key_start) {
+  static CUTLASS_DEVICE void zfillGradKV(Params const& p, 
+      int32_t key_start, uint8_t warp_id, uint8_t lane_id) {
     constexpr int kThreadsPerKey = 8;
     constexpr int kParallelKeys = kNumThreads / kThreadsPerKey;
     static_assert(kBlockSizeJ % kParallelKeys == 0, "");
     // This function is not really optimized, but should rarely be used
     // It's only used when some keys are "useless" and don't attend to
     // any query, due to causal masking
-
-    int lane_id = get_lane_id();
-    int thread_id = get_thread_id();
+    int thread_id = 32 * warp_id + lane_id;
     int k_shift = lane_id % kThreadsPerKey;
 
     CUTLASS_PRAGMA_UNROLL
@@ -1317,14 +1314,13 @@ struct AttentionBackwardKernel {
   static CUTLASS_DEVICE void processBlockIJ(
       SharedStorage& shared_storage,
       OutputFragments& output_frags,
-      Params const& p,
+      Params& p,
       int32_t query_start,
-      int32_t key_start) {
+      int32_t key_start, uint8_t warp_id, 
+      uint8_t lane_id) {
     cutlass::MatrixCoord no_offset{0, 0};
     accum_t scale = p.scale;
-    int16_t thread_id = threadIdx.x + threadIdx.y * blockDim.x;
-    int8_t warp_id = warp_uniform(threadIdx.y);
-    int8_t lane_id = threadIdx.x;
+    int16_t thread_id = 32 * warp_id + lane_id;
 
     bool isFirstQuery = (query_start == getQueryStart(p, key_start));
     int32_t next_query, next_key;
@@ -1476,11 +1472,7 @@ struct AttentionBackwardKernel {
             [&](int accum_n) {},
             [&](int accum_m, int accum_n, int idx) {
               // remember we are transposed
-              if (skipBoundsChecks ||
-                  (accum_n < num_queries_in_block &&
-                   accum_m < num_keys_in_block)) {
-                accum[idx] = accum[idx] * scale + bias_tensor_ref.at({accum_n, accum_m});
-              }
+              accum[idx] = accum[idx] * scale + bias_tensor_ref.at({accum_n, accum_m});
             },
             [&](int accum_n) {});
       } else {
@@ -1513,7 +1505,9 @@ struct AttentionBackwardKernel {
     //
     // grad_v[j_start:j_end] += attn_T @ do_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim_value);
+    constexpr bool kSingleIterationGradV =
+        kMaxK <= MatmulGradV::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradV ? 1 : p.head_dim_value);
          col += MatmulGradV::ThreadblockShape::kN) {
       using Mma = typename MatmulGradV::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1572,7 +1566,7 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradV);
       __syncthreads();
-      if (kPrologueGV &&
+      if (kPrologueGV && !kSingleIterationGradV &&
           col + MatmulGradV::ThreadblockShape::kN < p.head_dim_value) {
         prologueGradV(col + MatmulGradV::ThreadblockShape::kN);
       }
@@ -1585,7 +1579,8 @@ struct AttentionBackwardKernel {
               shared_storage.gradV_epilogue(),
               output_frags.gradV,
               createEpilogueIter(),
-              isFirstQuery || kNeedsAccumGradV);
+              isFirstQuery || kNeedsAccumGradV,
+              warp_id, lane_id);
         }
       }
     }
@@ -1651,7 +1646,7 @@ struct AttentionBackwardKernel {
 
         auto attn_T = shared_storage.attn_shared_storage().accum_ref();
         accum_t current_di;
-        typename Mma::FragmentC fragment_attn, fragment_di;
+        // dSij = (dPij - Di) * Pij
         LambdaIterator::iterateRows(
             lane_offset,
             [&](int accum_m) { current_di = shared_storage.di()[accum_m]; },
@@ -1661,17 +1656,15 @@ struct AttentionBackwardKernel {
               if (skipBoundsChecks ||
                   (accum_m < num_queries_in_block &&
                    accum_n < num_keys_in_block)) {
-                fragment_attn[idx] = attn_T.at({accum_n, accum_m});
+                accum_t attn = attn_T.at({accum_n, accum_m});
+                accum[idx] = (accum[idx] - current_di) * attn;
               } else {
-                fragment_attn[idx] = 0;
+                accum[idx] = 0;
               }
-              fragment_di[idx] = current_di;
             },
             [&](int accum_m) {
 
             });
-        // dSij = (dPij - Di) * Pij
-        accum = (accum - fragment_di) * fragment_attn;
 
 
         using DefaultGemm = typename MatmulDOIVJ::DefaultGemm;
@@ -1733,7 +1726,11 @@ struct AttentionBackwardKernel {
     //
     // grad_q[i_start:i_end] += tmp @ k_j
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < p.head_dim;
+    // Skip the loop & associated branches if we know at compile time the number
+    // of iterations
+    constexpr bool kSingleIterationGradQ =
+        kMaxK <= MatmulGradQ::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradQ ? 1 : p.head_dim);
          col += MatmulGradQ::ThreadblockShape::kN) {
       using Mma = typename MatmulGradQ::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1784,7 +1781,8 @@ struct AttentionBackwardKernel {
       mma.set_prologue_done(kPrologueGQ);
       mma(gemm_k_iterations, accum, iterator_B, accum);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = kSingleIterationGradQ ||
+          (col + MatmulGradQ::ThreadblockShape::kN >= p.head_dim);
       if (kPrologueGQ && !isLastColumn) {
         prologueGradQ(col + MatmulGradQ::ThreadblockShape::kN);
       }
@@ -1806,7 +1804,9 @@ struct AttentionBackwardKernel {
                          : shared_storage.gradQ_epilogue(),
             accum,
             output_it,
-            isFirst || kNeedsAccumGradQ);
+            isFirst || kNeedsAccumGradQ,
+            warp_id,
+            lane_id);
       }
     }
     /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1814,7 +1814,9 @@ struct AttentionBackwardKernel {
     //
     // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
     /////////////////////////////////////////////////////////////////////////////////////////////////
-    for (int col = 0; col < (kOutputInRF ? 1 : p.head_dim);
+    constexpr bool kSingleIterationGradK =
+        kMaxK <= MatmulGradK::ThreadblockShape::kN;
+    for (int col = 0; col < (kSingleIterationGradK ? 1 : p.head_dim);
          col += MatmulGradK::ThreadblockShape::kN) {
       using Mma = typename MatmulGradK::Mma;
       using AccumTileGmem = typename MatmulGradQ::AccumTileGmem;
@@ -1881,7 +1883,8 @@ struct AttentionBackwardKernel {
           iterator_B,
           output_frags.gradK);
       __syncthreads();
-      bool isLastColumn = col + MatmulGradK::ThreadblockShape::kN >= p.head_dim;
+      bool isLastColumn = kSingleIterationGradK ||
+          col + MatmulGradK::ThreadblockShape::kN >= p.head_dim;
       if (kPrologueGK && !isLastColumn) {
         prologueGradK(col + MatmulGradK::ThreadblockShape::kN);
       }
@@ -1891,7 +1894,8 @@ struct AttentionBackwardKernel {
         incrIteration(p, query_start, key_start, next_query, next_key);
         DISPATCH_BOOL(next_key != key_start, kForceReloadK, ([&]() {
                         prologueQkNextIteration<kForceReloadK>(
-                            shared_storage, p, next_query, next_key);
+                            shared_storage, p, next_query, 
+                            next_key, warp_id, lane_id);
                       }));
       }
 
@@ -1905,7 +1909,10 @@ struct AttentionBackwardKernel {
                            : shared_storage.gradK_epilogue(),
               output_frags.gradK,
               createEpilogueIter(),
-              isFirstQuery || kNeedsAccumGradK);
+              isFirstQuery || kNeedsAccumGradK,
+              warp_id,
+              lane_id);
+          __syncthreads();      
         }
       }
     }
@@ -1935,14 +1942,16 @@ struct AttentionBackwardKernel {
       SharedStorage& shared_storage,
       Params const& p,
       int32_t query_start,
-      int32_t key_start) {
+      int32_t key_start,
+      uint8_t warp_id,
+      uint8_t lane_id) {
     if (query_start >= p.num_queries || key_start >= p.num_keys) {
       return;
     }
 
     static constexpr bool kReloadK =
         kForceReloadK || !MatmulQK::Mma::kSmemContainsEntireMat;
-    auto thread_id = get_thread_id();
+    int thread_id = 32 * warp_id + lane_id;
     typename MatmulQK::Mma::IteratorA iterator_A(
         {int32_t(p.k_strideM)},
         p.key_ptr + key_start * p.k_strideM,
@@ -1971,7 +1980,10 @@ struct AttentionBackwardKernel {
       SharedStorage& shared_storage,
       OutputFragments& output_frags,
       Params const& p,
-      int32_t key_start) {
+      int32_t key_start,
+      uint8_t warp_id,
+      uint8_t lane_id) {
+    uint16_t thread_id = 32 * warp_id + lane_id;
     int32_t num_keys_in_block = skipBoundsChecks
         ? MatmulQK::Mma::Shape::kM
         : cutlass::fast_min(
@@ -1980,24 +1992,22 @@ struct AttentionBackwardKernel {
         typename MatmulGradV::OutputTileIterator::Params{p.gV_strideM()},
         p.grad_value_ptr + key_start * p.gV_strideM(),
         {num_keys_in_block, p.head_dim_value},
-        get_thread_id());
+        thread_id);
     accumulateInGmem<MatmulGradV>(
         shared_storage.gradV_epilogue_final(),
         output_frags.gradV,
         outputV_it,
-        true);
+        true, warp_id, lane_id);
 
     typename MatmulGradK::OutputTileIterator outputK_it(
         typename MatmulGradK::OutputTileIterator::Params{p.gK_strideM()},
         p.grad_key_ptr + key_start * p.gK_strideM(),
         {num_keys_in_block,
          false ? MatmulGradK::ThreadblockShape::kN : p.head_dim},
-        get_thread_id());
+         thread_id);
     accumulateInGmem<MatmulGradK>(
         shared_storage.gradK_epilogue_final(),
-        output_frags.gradK,
-        outputK_it,
-        true);
+        output_frags.gradK, outputK_it, true, warp_id, lane_id);
   }
 
   template <typename MatmulT>
@@ -2005,10 +2015,11 @@ struct AttentionBackwardKernel {
       typename MatmulT::DefaultEpilogue::SharedStorage& epilogue_smem,
       typename MatmulT::Mma::FragmentC const& accum,
       typename MatmulT::OutputTileIterator output_it,
-      bool first) {
+      bool first, uint8_t warp_id, uint8_t lane_id) {
     using DefaultEpilogue = typename MatmulT::DefaultEpilogue;
     using DefaultOutputOp = typename MatmulT::DefaultOutputOp;
     using Mma = typename MatmulT::Mma;
+    int thread_id = 32 * warp_id + lane_id;
     DISPATCH_BOOL(
         first, kIsFirst, ([&]() {
           static constexpr auto ScaleType = kIsFirst
@@ -2036,8 +2047,7 @@ struct AttentionBackwardKernel {
                   true // IterationsUnroll
                   >;
           EpilogueOutputOp rescale({1, 1});
-          Epilogue epilogue(
-              epilogue_smem, get_thread_id(), get_warp_id(), get_lane_id());
+          Epilogue epilogue(epilogue_smem, thread_id, warp_id, lane_id);
           epilogue(rescale, output_it, accum, output_it);
         }));
   }
@@ -2045,17 +2055,18 @@ struct AttentionBackwardKernel {
   template <int kElementsPerAccess>
   static CUTLASS_DEVICE void computeDelta(
       Params const& p,
-      int32_t query_start) {
+      int32_t query_start,
+      uint8_t warp_id,
+      uint8_t lane_id) {
     // Each thread computes one value for Delta
     // Depending on warp configuration, we might have multiple
     // threads of the same warp working on the same row
     using AccessType = cutlass::Array<scalar_t, kElementsPerAccess>;
     static_assert(kNumThreads >= kBlockSizeI, "");
     static constexpr int kNumThreadsPerLine = kNumThreads / kBlockSizeI;
-    int16_t thread_id = get_thread_id();
+    int16_t thread_id = 32 * warp_id + lane_id;
 
-    int16_t laneFirstCol =
-        kElementsPerAccess * (get_lane_id() % kNumThreadsPerLine);
+    int16_t laneFirstCol = kElementsPerAccess * (lane_id % kNumThreadsPerLine);
     int16_t laneRow = thread_id / kNumThreadsPerLine;
     bool rowPred = (query_start + laneRow) < p.num_queries;
     bool pred = rowPred;
@@ -2141,16 +2152,6 @@ struct AttentionBackwardKernel {
     if (rowPred) {
       p.delta_ptr[query_start + laneRow] = delta_value;
     }
-  }
-
-  static CUTLASS_DEVICE int8_t get_lane_id() {
-    return threadIdx.x;
-  }
-  static CUTLASS_DEVICE int8_t get_warp_id() {
-    return threadIdx.y;
-  }
-  static CUTLASS_DEVICE int16_t get_thread_id() {
-    return threadIdx.x + threadIdx.y * blockDim.x;
   }
 };
 

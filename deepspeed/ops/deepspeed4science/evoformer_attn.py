@@ -43,10 +43,6 @@ def attention_bwd(dO, Q, K, V, O, lse, bias1, bias2):
     if kernel_ is None:
         kernel_ = EvoformerAttnBuilder().load()
     delta = torch.empty_like(lse)
-    B = Q.shape[0]
-    N = Q.shape[1]
-    H = Q.shape[-2]
-    L = Q.shape[2]
     dB1 = torch.zeros_like(bias1, dtype=torch.float32)
     dB2 = torch.zeros_like(bias2, dtype=torch.float32)
     kernel_.attention_bwd(dO, Q, K, V, O, lse, delta,
