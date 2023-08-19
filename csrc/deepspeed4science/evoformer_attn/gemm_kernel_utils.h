@@ -47,7 +47,7 @@ struct CheckArch {
     static constexpr bool isAmpere = arch::kMinComputeCapability >= 80;
     static constexpr bool value = (isPreVolta && std::is_same_v<scalar_t, float>) ||
                                   (isPreAmpere && !std::is_same_v<scalar_t, cutlass::bfloat16_t>) ||
-                                  isAmpere;
+                                  isAmpere && (arch::kMinComputeCapability * 10 <= __CUDA_ARCH__);
 };
 
 #define DISPATCH_ARCHTAG(CC, func)                                                      \
