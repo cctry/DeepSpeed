@@ -200,12 +200,6 @@ template <
     template <typename, typename, typename> class Broadcast1_ = BroadcastNoLoad,
     template <typename, typename, typename> class Broadcast2_ = BroadcastNoLoad>
 struct AttentionBackwardKernel {
-  enum CustomMaskType {
-    NoCustomMask = 0,
-    CausalFromTopLeft = 1,
-    CausalFromBottomRight = 2,
-    NumCustomMaskTypes,
-  };
   using scalar_t = scalar_t_;
   using output_t = scalar_t;
   using output_accum_t = float;
@@ -224,7 +218,6 @@ struct AttentionBackwardKernel {
     scalar_t* query_ptr; // [Mq, nH, K]
     scalar_t* key_ptr; // [Mk, nH, K]
     scalar_t* value_ptr; // [Mk, nH, Kv]
-    scalar_t* bias_ptr = nullptr;
     lse_scalar_t* logsumexp_ptr; // [nH, Mq]
     scalar_t* output_ptr; // [Mq, nH, Kv]
     scalar_t* grad_output_ptr; // [Mq, nH, Kv]
@@ -343,9 +336,6 @@ struct AttentionBackwardKernel {
       query_ptr += batch_id * q_strideB + head_id * q_strideH;
       key_ptr += batch_id * k_strideB + head_id * k_strideH;
       value_ptr += batch_id * v_strideB + head_id * v_strideH;
-      if (bias_ptr != nullptr) {
-        bias_ptr += batch_id * bias_strideB + head_id * bias_strideH;
-      }
       output_ptr += batch_id * o_strideB + head_id * o_strideH;
       grad_output_ptr += batch_id * gO_strideB + head_id * gO_strideH;
       delta_ptr += batch_id * delta_strideB + head_id * delta_strideH;
@@ -389,7 +379,6 @@ struct AttentionBackwardKernel {
       query_ptr = warp_uniform(query_ptr);
       key_ptr = warp_uniform(key_ptr);
       value_ptr = warp_uniform(value_ptr);
-      bias_ptr = warp_uniform(bias_ptr);
       logsumexp_ptr = warp_uniform(logsumexp_ptr);
       output_ptr = warp_uniform(output_ptr);
       grad_output_ptr = warp_uniform(grad_output_ptr);
@@ -1107,7 +1096,6 @@ struct AttentionBackwardKernel {
     CHECK_ALIGNED_PTR(p.value_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.output_ptr, kMinimumAlignment);
     CHECK_ALIGNED_PTR(p.grad_output_ptr, kMinimumAlignment);
-    CHECK_ALIGNED_PTR(p.bias_ptr, kMinimumAlignment);
     EVOFORMER_CHECK(p.lse_strideH % 8 == 0, "LSE is not correctly aligned");
     EVOFORMER_CHECK(p.lse_strideB % 8 == 0, "LSE is not correctly aligned");
     EVOFORMER_CHECK(
@@ -1137,17 +1125,6 @@ struct AttentionBackwardKernel {
     EVOFORMER_CHECK(
         p.v_strideM % kMinimumAlignment == 0,
         "value is not correctly aligned (strideM)");
-    if (p.bias_ptr) {
-      EVOFORMER_CHECK(
-          p.num_batches <= 1 || p.bias_strideB % kMinimumAlignment == 0,
-          "attn_bias is not correctly aligned (strideB)");
-      EVOFORMER_CHECK(
-          p.num_heads <= 1 || p.bias_strideH % kMinimumAlignment == 0,
-          "attn_bias is not correctly aligned (strideH)");
-      EVOFORMER_CHECK(
-          p.bias_strideM % kMinimumAlignment == 0,
-          "attn_bias is not correctly aligned (strideM)");
-    }
     if (p.grad_bias_ptr) {
       EVOFORMER_CHECK(
           p.num_batches <= 1 || p.gB_strideB % kMinimumAlignment == 0,
@@ -1159,9 +1136,6 @@ struct AttentionBackwardKernel {
           p.gB_strideM % kMinimumAlignment == 0,
           "attn_bias.grad is not correctly aligned (strideM)");
     }
-    EVOFORMER_CHECK(
-        !(p.cu_seqlens_q_ptr && p.bias_ptr),
-        "CuSeqlen + bias not implemented yet");
     EVOFORMER_CHECK(
         p.dropout_prob <= 1.0f && p.dropout_prob >= 0.0f,
         "Invalid value for `dropout_prob`");
