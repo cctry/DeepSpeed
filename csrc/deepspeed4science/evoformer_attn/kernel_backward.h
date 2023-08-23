@@ -1198,13 +1198,13 @@ struct AttentionBackwardKernel {
         loadDi(shared_storage.di(), p, query_start);
 
         int32_t num_queries_in_block =
-            skipBoundsChecks
-                ? MatmulQK::Mma::Shape::kN
-                : warp_uniform(cutlass::fast_min((int32_t)MatmulQK::Mma::Shape::kN, p.num_queries - query_start));
+            skipBoundsChecks ? MatmulQK::Mma::Shape::kN
+                             : warp_uniform(cutlass::fast_min((int32_t)MatmulQK::Mma::Shape::kN,
+                                                              p.num_queries - query_start));
         int32_t num_keys_in_block =
-            skipBoundsChecks
-                ? MatmulQK::Mma::Shape::kM
-                : warp_uniform(cutlass::fast_min((int32_t)MatmulQK::Mma::Shape::kM, p.num_keys - key_start));
+            skipBoundsChecks ? MatmulQK::Mma::Shape::kM
+                             : warp_uniform(cutlass::fast_min((int32_t)MatmulQK::Mma::Shape::kM,
+                                                              p.num_keys - key_start));
 
         auto prologueGradV = [&](int col) {
             typename MatmulGradV::Mma::IteratorB iterator_dO(
@@ -1598,9 +1598,8 @@ struct AttentionBackwardKernel {
 
             bool isFirst = key_start == 0;
             int col_id = col / MatmulGradQ::ThreadblockShape::kN;
-            int num_cols = kSingleIterationGradQ
-                ? 1
-                : ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN);
+            int num_cols =
+                kSingleIterationGradQ ? 1 : ceil_div(p.head_dim, MatmulGradQ::ThreadblockShape::kN);
             int storage_id = (col_id + query_start / kBlockSizeI * num_cols);
             AccumTileGmem gmem_tile{p.workspace_gq + storage_id * AccumTileGmem::kElementsStored};
             if (isFirst || !kNeedsAccumGradQ) {
@@ -1650,7 +1649,7 @@ struct AttentionBackwardKernel {
         // grad_k[i_start:i_end] += tmp.transpose(-2, -1) @ q_i
         /////////////////////////////////////////////////////////////////////////////////////////////////
         rematerializeThreadIds();
-        
+
         constexpr bool kSingleIterationGradK = kMaxK <= MatmulGradK::ThreadblockShape::kN;
         for (int col = 0; col < (kSingleIterationGradK ? 1 : p.head_dim);
              col += MatmulGradK::ThreadblockShape::kN) {

@@ -15,9 +15,9 @@ tags: training
 git clone https://github.com/NVIDIA/cutlass
 export CUTLASS_PATH=/path/to/cutlass
 ```
-The kernels will be compiled when `DS4Sci_EvoformerAttention` is called for the first time. 
+The kernels will be compiled when `DS4Sci_EvoformerAttention` is called for the first time.
 
-`DS4Sci_EvoformerAttention` requires GPUs with compute capability 7.0 or higher (V100 or later GPUs) and the minimal CUDA version is 11.3. It is recommended to use CUDA 11.7 or later for better performance. Besides, the performace of backward kernel on V100 kernel is not as good as that on A100 for now.
+`DS4Sci_EvoformerAttention` requires GPUs with compute capability 7.0 or higher (V100 or later GPUs) and the minimal CUDA version is 11.3. It is recommended to use CUDA 11.7 or later for better performance. Besides, the performance of backward kernel on V100 kernel is not as good as that on A100 for now.
 
 (2) The unit test and benchmark are available in the `tests`. We can use the following command to run the unit test and benchmark.
 
