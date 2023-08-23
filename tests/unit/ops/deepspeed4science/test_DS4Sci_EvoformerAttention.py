@@ -8,9 +8,14 @@ from typing import List
 import pytest
 import torch
 from torch.nn import functional as F
+import deepspeed
+from deepspeed.ops.op_builder import EvoformerAttnBuilder
 from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 from deepspeed.accelerator import get_accelerator
 from unit.util import skip_on_arch
+
+if not deepspeed.ops.__compatible_ops__[EvoformerAttnBuilder.NAME]:
+    pytest.skip("DS4Sci_EvoformerAttention ops are not available on this system", allow_module_level=True)
 
 
 def attention_reference(

@@ -39,6 +39,11 @@ jobs:
           git rev-parse --short HEAD
           pip install .
 
+      - name: Install CUTLASS
+        run: |
+          git clone https://github.com/NVIDIA/cutlass
+          export CUTLASS_PATH=$(pwd)/cutlass
+
       - name: Install deepspeed
         run: |
           pip install .[dev,1bit,autotuning]
