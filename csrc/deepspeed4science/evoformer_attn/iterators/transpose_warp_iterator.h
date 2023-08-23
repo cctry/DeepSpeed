@@ -29,14 +29,19 @@
  *
  **************************************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #pragma once
 
 #include "warp_iterator_from_smem.h"
 
 template <typename WarpIterator>
 struct TransposeWarpIterator {
-  using Iterator = char;
-  static bool constexpr kSupportsTranspose = false;
+    using Iterator = char;
+    static bool constexpr kSupportsTranspose = false;
 };
 
 template <
@@ -47,7 +52,6 @@ template <
     bool kTranspose>
 struct TransposeWarpIterator<
     cutlass::gemm::warp::WarpIteratorFromSmem<Operand, Element, kTranspose>> {
-  using Iterator =
-      cutlass::gemm::warp::WarpIteratorFromSmem<Operand, Element, !kTranspose>;
-  static bool constexpr kSupportsTranspose = true;
+    using Iterator = cutlass::gemm::warp::WarpIteratorFromSmem<Operand, Element, !kTranspose>;
+    static bool constexpr kSupportsTranspose = true;
 };

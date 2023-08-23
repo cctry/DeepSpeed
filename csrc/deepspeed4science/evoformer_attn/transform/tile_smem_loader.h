@@ -29,7 +29,14 @@
  *POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 #pragma once
+#include <cutlass/cutlass.h>
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"
 #include "cutlass/coord.h"
@@ -40,51 +47,47 @@
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/regular_tile_iterator.h"
-#include <cutlass/cutlass.h>
 
-template <typename scalar_t,             // scalar type
-          typename ThreadblockTileShape, // size of tile to load
-          int Threads,                   // number of participating threads
-          int ElementsPerAccess>         // thread access width in elements
+template <typename scalar_t,              // scalar type
+          typename ThreadblockTileShape,  // size of tile to load
+          int Threads,                    // number of participating threads
+          int ElementsPerAccess>          // thread access width in elements
 class TileSmemLoader {
 public:
-  using Shape = ThreadblockTileShape;
-  using SmemTile =
-      cutlass::AlignedBuffer<scalar_t, ThreadblockTileShape::kCount>;
+    using Shape = ThreadblockTileShape;
+    using SmemTile = cutlass::AlignedBuffer<scalar_t, ThreadblockTileShape::kCount>;
 
-  using ThreadMap = cutlass::transform::PitchLinearStripminedThreadMap<
-      cutlass::layout::PitchLinearShape<
-          ThreadblockTileShape::kColumn, // contiguous
-          ThreadblockTileShape::kRow>,   // strided
-      Threads,                           // Threads
-      ElementsPerAccess>;                // ElementsPerAccess
+    using ThreadMap = cutlass::transform::PitchLinearStripminedThreadMap<
+        cutlass::layout::PitchLinearShape<ThreadblockTileShape::kColumn,  // contiguous
+                                          ThreadblockTileShape::kRow>,    // strided
+        Threads,                                                          // Threads
+        ElementsPerAccess>;                                               // ElementsPerAccess
 
-  using GmemTileIterator =
-      cutlass::transform::threadblock::PredicatedTileIterator<
-          ThreadblockTileShape,      // Shape
-          scalar_t,                  // Element
-          cutlass::layout::RowMajor, // Layout
-          0,                         // AdvanceRank
-          ThreadMap>;                // ThreadMap
+    using GmemTileIterator = cutlass::transform::threadblock::PredicatedTileIterator<
+        ThreadblockTileShape,       // Shape
+        scalar_t,                   // Element
+        cutlass::layout::RowMajor,  // Layout
+        0,                          // AdvanceRank
+        ThreadMap>;                 // ThreadMap
 
-  using SmemTileIterator = cutlass::transform::threadblock::RegularTileIterator<
-      ThreadblockTileShape,      // Shape
-      scalar_t,                  // Element
-      cutlass::layout::RowMajor, // Layout
-      0,                         // AdvanceRank
-      ThreadMap>;                // ThreadMap
+    using SmemTileIterator =
+        cutlass::transform::threadblock::RegularTileIterator<ThreadblockTileShape,       // Shape
+                                                             scalar_t,                   // Element
+                                                             cutlass::layout::RowMajor,  // Layout
+                                                             0,           // AdvanceRank
+                                                             ThreadMap>;  // ThreadMap
 
-  using Fragment = typename GmemTileIterator::Fragment;
+    using Fragment = typename GmemTileIterator::Fragment;
 
-  /// load a tile from global memory into shared memory
-  CUTLASS_DEVICE
-  static void load(GmemTileIterator tile_load_iter,
-                   SmemTileIterator tile_store_iter) {
-    Fragment tb_frag;
-    tb_frag.clear();
-    tile_load_iter.load(tb_frag);
-    tile_store_iter.store(tb_frag);
+    /// load a tile from global memory into shared memory
+    CUTLASS_DEVICE
+    static void load(GmemTileIterator tile_load_iter, SmemTileIterator tile_store_iter)
+    {
+        Fragment tb_frag;
+        tb_frag.clear();
+        tile_load_iter.load(tb_frag);
+        tile_store_iter.store(tb_frag);
 
-    __syncthreads();
-  }
+        __syncthreads();
+    }
 };

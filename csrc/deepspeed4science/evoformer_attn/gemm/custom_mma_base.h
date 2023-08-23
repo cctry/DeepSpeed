@@ -29,6 +29,12 @@
  *POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 /*! \file
     \brief Template for a double-buffered threadblock-scoped GEMM kernel.
 */
@@ -64,120 +70,112 @@ template <
     /// Used for partial specialization
     typename Enable = bool>
 class CustomMmaBase {
- public:
-  ///< Size of the Gemm problem - concept: gemm::GemmShape<>
-  using Shape = Shape_;
+public:
+    ///< Size of the Gemm problem - concept: gemm::GemmShape<>
+    using Shape = Shape_;
 
-  ///< Policy describing tuning details
-  using Policy = Policy_;
+    ///< Policy describing tuning details
+    using Policy = Policy_;
 
-  //
-  // Dependent types
-  //
+    //
+    // Dependent types
+    //
 
-  /// Warp-level Mma
-  using Operator = typename Policy::Operator;
+    /// Warp-level Mma
+    using Operator = typename Policy::Operator;
 
-  /// Shape describing the overall GEMM computed from shared memory
-  /// by each warp.
-  using WarpGemm = typename Policy::Operator::Shape;
+    /// Shape describing the overall GEMM computed from shared memory
+    /// by each warp.
+    using WarpGemm = typename Policy::Operator::Shape;
 
-  /// Shape describing the number of warps filling the CTA
-  using WarpCount = GemmShape<
-      Shape::kM / WarpGemm::kM,
-      Shape::kN / WarpGemm::kN,
-      Shape::kK / WarpGemm::kK>;
+    /// Shape describing the number of warps filling the CTA
+    using WarpCount =
+        GemmShape<Shape::kM / WarpGemm::kM, Shape::kN / WarpGemm::kN, Shape::kK / WarpGemm::kK>;
 
-  /// Number of warp-level GEMM oeprations
-  static int const kWarpGemmIterations =
-      (WarpGemm::kK / Operator::Policy::MmaShape::kK);
+    /// Number of warp-level GEMM oeprations
+    static int const kWarpGemmIterations = (WarpGemm::kK / Operator::Policy::MmaShape::kK);
 
-  /// Number of stages
-  static int const kStages = Stages;
+    /// Number of stages
+    static int const kStages = Stages;
 
-  //
-  // Nested structs
-  //
+    //
+    // Nested structs
+    //
 
-  /// Shared storage object needed by threadblock-scoped GEMM
-  template <typename Element, typename OperandShape, typename OperandLayout>
-  struct OperandSharedStorage {
-    AlignedBuffer<Element, OperandShape::kCount> buffer;
-    using TensorRef = TensorRef<Element, OperandLayout>;
+    /// Shared storage object needed by threadblock-scoped GEMM
+    template <typename Element, typename OperandShape, typename OperandLayout>
+    struct OperandSharedStorage {
+        AlignedBuffer<Element, OperandShape::kCount> buffer;
+        using TensorRef = TensorRef<Element, OperandLayout>;
 
+        CUTLASS_DEVICE
+        static OperandLayout Layout()
+        {
+            return OperandLayout::packed({OperandShape::kRow, OperandShape::kColumn});
+        }
+
+        /// Returns a TensorRef to the operand
+        CUTLASS_HOST_DEVICE
+        TensorRef ref() { return TensorRef{buffer.data(), Layout()}; }
+    };
+
+    /// Shape of the A matrix operand in shared memory
+    using ShapeA = MatrixShape<Shape::kM + Policy::SmemPaddingA::kRow,
+                               Shape::kK * kStages + Policy::SmemPaddingA::kColumn>;
+
+    /// Shape of the B matrix operand in shared memory
+    using ShapeB = MatrixShape<Shape::kK * kStages + Policy::SmemPaddingB::kRow,
+                               Shape::kN + Policy::SmemPaddingB::kColumn>;
+
+    using SharedStorageA =
+        OperandSharedStorage<typename Operator::ElementA, ShapeA, typename Operator::LayoutA>;
+    using SharedStorageB =
+        OperandSharedStorage<typename Operator::ElementB, ShapeB, typename Operator::LayoutB>;
+    using TensorRefA = typename SharedStorageA::TensorRef;
+    using TensorRefB = typename SharedStorageB::TensorRef;
+
+    struct SharedStorage {
+        /// Buffer for A operand
+        SharedStorageA operand_A;
+
+        /// Buffer for B operand
+        SharedStorageB operand_B;
+    };
+
+protected:
+    //
+    // Data members
+    //
+
+    /// Iterator to load a warp-scoped tile of A operand from shared memory
+    typename Operator::IteratorA warp_tile_iterator_A_;
+
+    /// Iterator to load a warp-scoped tile of B operand from shared memory
+    typename Operator::IteratorB warp_tile_iterator_B_;
+
+public:
+    /// Construct from tensor references
     CUTLASS_DEVICE
-    static OperandLayout Layout() {
-      return OperandLayout::packed({OperandShape::kRow, OperandShape::kColumn});
+    CustomMmaBase(
+        ///< Shared storage needed for internal use by threadblock-scoped GEMM
+        SharedStorageA& shared_storageA,
+        SharedStorageB& shared_storageB,
+        ///< ID within the threadblock
+        int thread_idx,
+        ///< ID of warp
+        int warp_idx,
+        ///< ID of each thread within a warp
+        int lane_idx)
+        : warp_tile_iterator_A_(shared_storageA.ref(), lane_idx),
+          warp_tile_iterator_B_(shared_storageB.ref(), lane_idx)
+    {
     }
-
-    /// Returns a TensorRef to the operand
-    CUTLASS_HOST_DEVICE
-    TensorRef ref() {
-      return TensorRef{buffer.data(), Layout()};
-    }
-  };
-
-  /// Shape of the A matrix operand in shared memory
-  using ShapeA = MatrixShape<
-      Shape::kM + Policy::SmemPaddingA::kRow,
-      Shape::kK * kStages + Policy::SmemPaddingA::kColumn>;
-
-  /// Shape of the B matrix operand in shared memory
-  using ShapeB = MatrixShape<
-      Shape::kK * kStages + Policy::SmemPaddingB::kRow,
-      Shape::kN + Policy::SmemPaddingB::kColumn>;
-
-  using SharedStorageA = OperandSharedStorage<
-      typename Operator::ElementA,
-      ShapeA,
-      typename Operator::LayoutA>;
-  using SharedStorageB = OperandSharedStorage<
-      typename Operator::ElementB,
-      ShapeB,
-      typename Operator::LayoutB>;
-  using TensorRefA = typename SharedStorageA::TensorRef;
-  using TensorRefB = typename SharedStorageB::TensorRef;
-
-  struct SharedStorage {
-    /// Buffer for A operand
-    SharedStorageA operand_A;
-
-    /// Buffer for B operand
-    SharedStorageB operand_B;
-  };
-
- protected:
-  //
-  // Data members
-  //
-
-  /// Iterator to load a warp-scoped tile of A operand from shared memory
-  typename Operator::IteratorA warp_tile_iterator_A_;
-
-  /// Iterator to load a warp-scoped tile of B operand from shared memory
-  typename Operator::IteratorB warp_tile_iterator_B_;
-
- public:
-  /// Construct from tensor references
-  CUTLASS_DEVICE
-  CustomMmaBase(
-      ///< Shared storage needed for internal use by threadblock-scoped GEMM
-      SharedStorageA& shared_storageA,
-      SharedStorageB& shared_storageB,
-      ///< ID within the threadblock
-      int thread_idx,
-      ///< ID of warp
-      int warp_idx,
-      ///< ID of each thread within a warp
-      int lane_idx)
-      : warp_tile_iterator_A_(shared_storageA.ref(), lane_idx),
-        warp_tile_iterator_B_(shared_storageB.ref(), lane_idx) {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-} // namespace threadblock
-} // namespace gemm
-} // namespace cutlass
+}  // namespace threadblock
+}  // namespace gemm
+}  // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

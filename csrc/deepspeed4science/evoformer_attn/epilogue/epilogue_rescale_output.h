@@ -29,6 +29,11 @@
  *
  **************************************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// SPDX-License-Identifier: Apache-2.0
+
+// DeepSpeed Team
+
 /*! \file
   \brief Epilogue for threadblock scoped GEMMs using Tensor Ops.
 
@@ -89,174 +94,158 @@ namespace thread {
 //     alpha = 1 / s_prime (to normalize when isLast=True, 1 otherwise)
 //     beta = alpha / m_prime (renormalize the output when the max changes)
 //     source is the current output
-template <
-    typename ElementOutput_, ///< Data type used to store tensors
-    typename ElementSource_, //< Data type for source (usually matches
-                             //`ElementOutput`)
-    int Count, ///< Number of elements computed per operation.
-               ///< Usually it is 128/sizeof_bits<ElementOutput_>,
-               ///< but we use 64 or 32 sometimes when there are not enough data
-               ///< to store
-    typename ElementAccumulator_, ///< Accumulator data type
-    typename ElementCompute_, ///< Data type used to compute linear combination
-    bool isFirst,
-    bool isLast,
-    typename FragmentAlphaBeta_,
-    FloatRoundStyle Round = FloatRoundStyle::round_to_nearest>
+template <typename ElementOutput_,  ///< Data type used to store tensors
+          typename ElementSource_,  //< Data type for source (usually matches
+                                    //`ElementOutput`)
+          int Count,                ///< Number of elements computed per operation.
+                                    ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+          ///< but we use 64 or 32 sometimes when there are not enough data
+          ///< to store
+          typename ElementAccumulator_,  ///< Accumulator data type
+          typename ElementCompute_,      ///< Data type used to compute linear combination
+          bool isFirst,
+          bool isLast,
+          typename FragmentAlphaBeta_,
+          FloatRoundStyle Round = FloatRoundStyle::round_to_nearest>
 class MemoryEfficientAttentionNormalize {
- public:
-  using ElementOutput = ElementOutput_;
-  using ElementSource = ElementSource_;
-  using ElementAccumulator = ElementAccumulator_;
-  using ElementCompute = ElementCompute_;
+public:
+    using ElementOutput = ElementOutput_;
+    using ElementSource = ElementSource_;
+    using ElementAccumulator = ElementAccumulator_;
+    using ElementCompute = ElementCompute_;
 
-  static int const kCount = Count;
+    static int const kCount = Count;
 
-  using FragmentOutput = Array<ElementOutput, kCount>;
-  using FragmentSource = Array<ElementSource, kCount>;
-  using FragmentAccumulator = Array<ElementAccumulator, kCount>;
-  using ComputeFragment = Array<ElementCompute, kCount>;
-  using FragmentAlphaBeta = FragmentAlphaBeta_;
+    using FragmentOutput = Array<ElementOutput, kCount>;
+    using FragmentSource = Array<ElementSource, kCount>;
+    using FragmentAccumulator = Array<ElementAccumulator, kCount>;
+    using ComputeFragment = Array<ElementCompute, kCount>;
+    using FragmentAlphaBeta = FragmentAlphaBeta_;
 
-  static FloatRoundStyle const kRound = Round;
+    static FloatRoundStyle const kRound = Round;
 
- private:
-  //
-  // Data members
-  //
+private:
+    //
+    // Data members
+    //
 
-  FragmentAlphaBeta const& s_prime_;
-  FragmentAlphaBeta const& m_prime_;
+    FragmentAlphaBeta const& s_prime_;
+    FragmentAlphaBeta const& m_prime_;
 
- public:
-  /// Constructs the function object, possibly loading from pointers in host
-  /// memory
-  CUTLASS_HOST_DEVICE
-  MemoryEfficientAttentionNormalize(
-      FragmentAlphaBeta const& s_prime,
-      FragmentAlphaBeta const& m_prime)
-      : s_prime_(s_prime), m_prime_(m_prime) {}
+public:
+    /// Constructs the function object, possibly loading from pointers in host
+    /// memory
+    CUTLASS_HOST_DEVICE
+    MemoryEfficientAttentionNormalize(FragmentAlphaBeta const& s_prime,
+                                      FragmentAlphaBeta const& m_prime)
+        : s_prime_(s_prime), m_prime_(m_prime)
+    {
+    }
 
-  /// Returns true if source is needed
-  CUTLASS_HOST_DEVICE
-  bool is_source_needed() const {
-    return !isFirst;
-  }
+    /// Returns true if source is needed
+    CUTLASS_HOST_DEVICE
+    bool is_source_needed() const { return !isFirst; }
 
-  /// Functionally required for serial reduction in the epilogue
-  CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition, int k_partition_count) {}
+    /// Functionally required for serial reduction in the epilogue
+    CUTLASS_HOST_DEVICE
+    void set_k_partition(int k_partition, int k_partition_count) {}
 
-  /// Computes linear scaling: D = alpha * accumulator + beta * source
-  CUTLASS_HOST_DEVICE
-  FragmentOutput operator()(
-      int row,
-      FragmentAccumulator const& accumulator,
-      FragmentSource const& source) const {
-    assert(!isFirst);
+    /// Computes linear scaling: D = alpha * accumulator + beta * source
+    CUTLASS_HOST_DEVICE
+    FragmentOutput operator()(int row,
+                              FragmentAccumulator const& accumulator,
+                              FragmentSource const& source) const
+    {
+        assert(!isFirst);
 
-    // Convert source to interal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementSource, kCount, Round>
-        source_converter;
-    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
-        accumulator_converter;
+        // Convert source to internal compute numeric type
+        NumericArrayConverter<ElementCompute, ElementSource, kCount, Round> source_converter;
+        NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
+            accumulator_converter;
 
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
-        destination_converter;
+        // Convert to destination numeric type
+        NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    ComputeFragment converted_source = source_converter(source);
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+        ComputeFragment converted_source = source_converter(source);
+        ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
-    // Perform binary operations
-    ComputeFragment intermediate;
+        // Perform binary operations
+        ComputeFragment intermediate;
 
-    multiplies<ComputeFragment> mul_add_source;
-    multiply_add<ComputeFragment> mul_add_accumulator;
+        multiplies<ComputeFragment> mul_add_source;
+        multiply_add<ComputeFragment> mul_add_accumulator;
 
-    ElementCompute alpha = isLast ? (1 / s_prime_[row]) : 1;
-    ElementCompute beta = alpha * m_prime_[row];
+        ElementCompute alpha = isLast ? (1 / s_prime_[row]) : 1;
+        ElementCompute beta = alpha * m_prime_[row];
 
-    intermediate = mul_add_source(beta, converted_source); // X =  beta * C
+        intermediate = mul_add_source(beta, converted_source);  // X =  beta * C
 
-    intermediate = mul_add_accumulator(
-        alpha, converted_accumulator, intermediate); // D = alpha * Accum + X
+        intermediate = mul_add_accumulator(
+            alpha, converted_accumulator, intermediate);  // D = alpha * Accum + X
 
-    return destination_converter(intermediate);
-  }
+        return destination_converter(intermediate);
+    }
 
-  /// Computes linear scaling: D = alpha * accumulator
-  CUTLASS_HOST_DEVICE
-  FragmentOutput operator()(int row, FragmentAccumulator const& accumulator)
-      const {
-    assert(isFirst);
+    /// Computes linear scaling: D = alpha * accumulator
+    CUTLASS_HOST_DEVICE
+    FragmentOutput operator()(int row, FragmentAccumulator const& accumulator) const
+    {
+        assert(isFirst);
 
-    // Convert source to interal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
-        accumulator_converter;
+        // Convert source to internal compute numeric type
+        NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
+            accumulator_converter;
 
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
-        destination_converter;
+        // Convert to destination numeric type
+        NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+        ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
-    ComputeFragment intermediate;
-    multiplies<ComputeFragment> mul_accumulator;
+        ComputeFragment intermediate;
+        multiplies<ComputeFragment> mul_accumulator;
 
-    ElementCompute alpha = isLast ? (1 / s_prime_[row]) : 1;
+        ElementCompute alpha = isLast ? (1 / s_prime_[row]) : 1;
 
-    intermediate = mul_accumulator(
-        alpha, converted_accumulator); // X =  alpha * C + uniform
+        intermediate = mul_accumulator(alpha, converted_accumulator);  // X =  alpha * C + uniform
 
-    return destination_converter(intermediate);
-  }
+        return destination_converter(intermediate);
+    }
 };
 
-} // namespace thread
+}  // namespace thread
 
 namespace threadblock {
-template <
-    typename EO,
-    typename ES,
-    int Count,
-    typename EA,
-    typename EC,
-    bool F,
-    bool L,
-    typename FAB,
-    FloatRoundStyle R>
-struct ApplyEpilogueOp<thread::MemoryEfficientAttentionNormalize<
-    EO,
-    ES,
-    Count,
-    EA,
-    EC,
-    F,
-    L,
-    FAB,
-    R>> {
-  using Op = thread::
-      MemoryEfficientAttentionNormalize<EO, ES, Count, EA, EC, F, L, FAB, R>;
-  static CUTLASS_DEVICE typename Op::FragmentOutput apply(
-      Op const& output_op,
-      int row_id,
-      typename Op::FragmentAccumulator const& accum,
-      typename Op::FragmentSource const& source) {
-    return output_op(row_id, accum, source);
-  }
-  static CUTLASS_DEVICE typename Op::FragmentOutput apply(
-      Op const& output_op,
-      int row_id,
-      typename Op::FragmentAccumulator const& accum) {
-    return output_op(row_id, accum);
-  }
+template <typename EO,
+          typename ES,
+          int Count,
+          typename EA,
+          typename EC,
+          bool F,
+          bool L,
+          typename FAB,
+          FloatRoundStyle R>
+struct ApplyEpilogueOp<
+    thread::MemoryEfficientAttentionNormalize<EO, ES, Count, EA, EC, F, L, FAB, R>> {
+    using Op = thread::MemoryEfficientAttentionNormalize<EO, ES, Count, EA, EC, F, L, FAB, R>;
+    static CUTLASS_DEVICE typename Op::FragmentOutput apply(
+        Op const& output_op,
+        int row_id,
+        typename Op::FragmentAccumulator const& accum,
+        typename Op::FragmentSource const& source)
+    {
+        return output_op(row_id, accum, source);
+    }
+    static CUTLASS_DEVICE typename Op::FragmentOutput
+    apply(Op const& output_op, int row_id, typename Op::FragmentAccumulator const& accum)
+    {
+        return output_op(row_id, accum);
+    }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-} // namespace threadblock
-} // namespace epilogue
-} // namespace cutlass
+}  // namespace threadblock
+}  // namespace epilogue
+}  // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

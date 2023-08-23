@@ -29,14 +29,14 @@ pytest -s tests/unit/ops/deepspeed4science/test_DS4Sci_EvoformerAttention.py
 python tests/benchmarks/DS4Sci_EvoformerAttention_bench.py
 ```
 
-(3) To use `DS4Sci_EvoformerAttention` in user's own models, we need to import `DS4Sci_EvoformerAttention` from `deepspeed.ops.deepspeed4science`. 
+(3) To use `DS4Sci_EvoformerAttention` in user's own models, we need to import `DS4Sci_EvoformerAttention` from `deepspeed.ops.deepspeed4science`.
 
 ```python
 from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 ```
 
 `DS4Sci_EvoformerAttention` supports four attention mechanisms in Evoformer by using different inputs as shown in the following examples. Note that we denote the number of sequences as `N_seq` and the number of residuals as `N_res`. The dimension of the hidden states `Dim` and head number `Head` are different among different attention.
-<!-- 
+<!--
  MSA row-wise attention, MSA column-wise attention, Triangular starting node self-attention, and Triangular ending node self-attention.  -->
 (a) MSA row-wise attention builds attention weights for residue pairs and integrates the information from the pair representation as an additional bias term.
 ```python
