@@ -6,7 +6,6 @@
 from .builder import CUDAOpBuilder, installed_cuda_version
 from deepspeed.accelerator import get_accelerator
 import os
-import yaml
 
 
 class EvoformerAttnBuilder(CUDAOpBuilder):
@@ -41,6 +40,7 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
             self.warning("Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH")
             return False
         with open(f'{self.cutlass_path}/CITATION.cff', 'r') as f:
+            import yaml
             version = yaml.safe_load(f)['version']
             if int(version.split('.')[0]) < 3:
                 self.warning("Please use CUTLASS version >= 3.0.0")
