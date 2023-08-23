@@ -4,12 +4,11 @@
 # DeepSpeed Team
 
 from .builder import CUDAOpBuilder, installed_cuda_version
-from deepspeed.accelerator import get_accelerator
 import os
 
 
 class EvoformerAttnBuilder(CUDAOpBuilder):
-    BUILD_VAR = "DS_BUILD_RANDOM_LTD"
+    BUILD_VAR = "DS_BUILD_EVOFORMER_ATTN"
     NAME = "evoformer_attn"
 
     def __init__(self, name=None):
@@ -46,10 +45,10 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
                 self.warning("Please use CUTLASS version >= 3.0.0")
                 return False
         cuda_okay = True
-        if not self.is_rocm_pytorch() and get_accelerator().is_available():
+        if not self.is_rocm_pytorch() and torch.cuda.is_available():  #ignore-cuda
             sys_cuda_major, _ = installed_cuda_version()
             torch_cuda_major = int(torch.version.cuda.split('.')[0])
-            cuda_capability = get_accelerator().get_device_properties(0).major
+            cuda_capability = torch.cuda.get_device_properties(0).major  #ignore-cuda
             if cuda_capability < 7:
                 self.warning("Please use a GPU with compute capability >= 7.0")
                 cuda_okay = False
