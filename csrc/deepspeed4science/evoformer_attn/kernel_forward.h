@@ -140,7 +140,6 @@ struct AttentionKernel {
         scalar_t* query_ptr;  // [num_queries, num_heads, head_dim]
         scalar_t* key_ptr;    // [num_keys, num_heads, head_dim]
         scalar_t* value_ptr;  // [num_keys, num_heads, head_dim_value]
-        // scalar_t *attn_bias_ptr = nullptr; // [num_heads, num_queries, num_keys]
 
         // Output tensors
         output_t* output_ptr;              // [num_queries, num_heads, head_dim_value]
@@ -210,10 +209,6 @@ struct AttentionKernel {
             value_ptr += k_start * v_strideM + head_id * v_strideH;
             output_ptr += int64_t(q_start + query_start) * o_strideM + head_id * head_dim_value;
 
-            // if (kSupportsBias && attn_bias_ptr != nullptr) {
-            //   attn_bias_ptr += (batch_id * bias_strideB) + (head_id *
-            //   bias_strideH);
-            // }
             if (output_accum_ptr != nullptr) {
                 output_accum_ptr += int64_t(q_start + query_start) * (head_dim_value * num_heads) +
                                     head_id * head_dim_value;
@@ -269,9 +264,6 @@ struct AttentionKernel {
             query_ptr = warp_uniform(query_ptr);
             key_ptr = warp_uniform(key_ptr);
             value_ptr = warp_uniform(value_ptr);
-            // if (kSupportsBias) {
-            //   attn_bias_ptr = warp_uniform(attn_bias_ptr);
-            // }
             output_ptr = warp_uniform(output_ptr);
             output_accum_ptr = warp_uniform(output_accum_ptr);
             logsumexp_ptr = warp_uniform(logsumexp_ptr);
