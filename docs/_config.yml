@@ -41,6 +41,7 @@ collections:
       - cifar-10.md
       - curriculum-learning.md
       - data-efficiency.md
+      - deepspeed4science.md
       - flops-profiler.md
       - pytorch-profiler.md
       - autotuning.md

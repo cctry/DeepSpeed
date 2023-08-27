@@ -67,6 +67,8 @@ lnav:
         url: /tutorials/curriculum-learning/
       - title: 'Data Efficiency'
         url: /tutorials/data-efficiency/
+      - title: 'DeepSpeed4Science'
+        url: /tutorials/deepspeed4science/
       - title: 'Flops Profiler'
         url: /tutorials/flops-profiler/
       - title: 'PyTorch Profiler'
