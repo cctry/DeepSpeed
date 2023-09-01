@@ -38,11 +38,9 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
         if self.cutlass_path is None:
             self.warning("Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH")
             return False
-        with open(f'{self.cutlass_path}/CITATION.cff', 'r') as f:
-            import yaml
-            version = yaml.safe_load(f)['version']
-            if int(version.split('.')[0]) < 3:
-                self.warning("Please use CUTLASS version >= 3.0.0")
+        with open(f'{self.cutlass_path}/CHANGELOG.md', 'r') as f:
+            if '3.1.0' not in f.read():
+                self.warning("Please use CUTLASS version >= 3.1.0")
                 return False
         cuda_okay = True
         if not self.is_rocm_pytorch() and torch.cuda.is_available():  #ignore-cuda
