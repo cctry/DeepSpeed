@@ -1,13 +1,16 @@
 ---
-title: "DeepSpeed4Science tutorial catalogue"
-tags: training inference
+title: "DeepSpeed4Science Overview and Tutorial Catalogue"
+permalink: /deepspeed4science/
+toc: true
+toc_label: "Contents"
+toc_sticky: true
 ---
 
 Deep learning is becoming a powerful tool for scientific research. In line with Microsoft's mission to solve humanity's most pressing challenges, the DeepSpeed team at Microsoft is responding to this opportunity by launching a new initiative called *DeepSpeed4Science*, aiming to build unique capabilities through AI system technology innovations to help domain experts to unlock today's biggest science mysteries. Details of the DeepSpeed4Science initiative can be found at [our blog](TODO) and [our website](TODO).
 
 This page serves as the "main tutorial catalogue" for all technologies released (or to be released in the future) as part of the DeepSpeed4Science initiative, making it easier for scientists to shop for techniques they need. For each technique we will introduce what is it for, when to use it, how to use it, and existing scientific applications of the techniques (we welcome users to contribute more showcases if you apply our techniques in your scientific research):
 
-* [2023/09] We are releasing two techniques: [DS4Sci_EvoformerAttention](#1-ds4sci_evoformerattention) and [long sequence support](#2-deepspeed4science-long-sequence-support), and their scientific applications in structural biology research.
+* [2023/09] We are releasing two techniques: [DS4Sci_EvoformerAttention](#1-ds4sci_evoformerattention) and [DeepSpeed4Science large-scale training framework](#2-deepspeed4science-large-scale-training-framework), and their scientific applications in structural biology research.
 
 ## 1. DS4Sci_EvoformerAttention
 
@@ -79,20 +82,20 @@ out = DS4Sci_EvoformerAttention(Q, K, V, [res_mask, right_edges])
 
 [OpenFold](https://github.com/aqlaboratory/openfold) is a community reproduction of DeepMind's AlphaFold2 that makes it possible to train or finetune AlphaFold2 on new datasets. Training AlphaFold2 incurs a memory explosion problem because it contains several custom Evoformer attention variants that manifest unusually large activations. By leveraging DeepSpeed4Science's DS4Sci_EvoformerAttention kernels, OpenFold team is able to reduce the peak memory requirement by 13x without accuracy loss. Detailed information about this application can be found at [our blog](TODO) and [our website](TODO). OpenFold team also hosts an [example](TODO) about how to use DS4Sci_EvoformerAttention in the OpenFold repo.
 
-## 2. DeepSpeed4Science long sequence support
+## 2. DeepSpeed4Science large-scale training framework
 
-### 2.1 What is long sequence support
-DeepSpeed4Science long sequence support is a set of systematic and algorithmic approaches for enabling very-long sequence during model training. Specifically, this long sequence support is released as an update of the [Megatron-DeepSpeed](https://github.com/microsoft/Megatron-DeepSpeed) framework. This update includes a rebase with [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) to leverage NVIDIA's newest technologies, and several DeepSpeed's own optimizations on attention map memory optimization and position embedding partitioning.
+### 2.1 What is DeepSpeed4Science large-scale training framework
+DeepSpeed4Science large-scale training framework is a set of systematic and algorithmic approaches for enabling larger-scale model training, especially when very long sequences is used. Specifically, DeepSpeed4Science large-scale training framework is released as an update of the [Megatron-DeepSpeed](https://github.com/microsoft/Megatron-DeepSpeed) framework. This update includes a rebase with [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) to leverage NVIDIA's newest technologies, and several DeepSpeed's own optimizations on attention map memory optimization and position embedding partitioning.
 
-### 2.2 When to use long sequence support
-DeepSpeed4Science long sequence support shall be used when you have out-of-memory issues when training with long sequence lengths. Our results show that our long sequence support enables up to 9x longer sequence lengths than NVIDIA's Megatron-LM.
+### 2.2 When to use DeepSpeed4Science large-scale training framework
+The updated Megatron-DeepSpeed framework can be used for any large-scale model training. It is particularly beneficial to use our framework when you have out-of-memory issues when training with long sequence lengths. Our results show that our long sequence support enables up to 9x longer sequence lengths than NVIDIA's Megatron-LM.
 
-Note that DeepSpeed4Science long sequence support mainly aims to extend and improve the Megatron-LM-based long sequence support. In parallel of this effort, [DeepSpeed-Ulysses](/tutorials/ds-sequence/) is another DeepSpeed technology aiming to support long sequences by reducing the communication via quantization. The two approaches [cannot be used at the same time](https://github.com/microsoft/DeepSpeed/issues/4217). We recommend users to try both of them.
+In parallel to the Megatron-LM-based long sequence support that we extend and improve, [DeepSpeed-Ulysses](/tutorials/ds-sequence/) is another DeepSpeed technology aiming to support long sequences by reducing the communication via quantization. DeepSpeed-Ulysses is also integrated in the updated Megatron-DeepSpeed framework. The two long sequence support approaches [cannot be used at the same time](https://github.com/microsoft/DeepSpeed/issues/4217). We recommend users to try both of them.
 
-### 2.3 How to use long sequence support
-We have a [detailed tutorial](https://github.com/microsoft/Megatron-DeepSpeed/tree/main/examples_deepspeed/deepspeed4science/megatron_long_seq_support) in the Megatron-DeepSpeed repo about how to use DeepSpeed4Science long sequence support, including installation/setup instructions, example scripts, and reference results.
+### 2.3 How to use DeepSpeed4Science large-scale training framework
+We have a [detailed tutorial](https://github.com/microsoft/Megatron-DeepSpeed/tree/main/examples_deepspeed/deepspeed4science/megatron_long_seq_support) in the Megatron-DeepSpeed repo about how to use the framework when having long sequences, including installation/setup instructions, example scripts, and reference results.
 
-### 2.4 DeepSpeed4Science long sequence support scientific application
+### 2.4 DeepSpeed4Science large-scale training framework scientific application
 
 **2.4.1 DeepSpeed4Science long sequence support enables very-long sequence support for genome-scale foundation models in GenSLMs**
 
