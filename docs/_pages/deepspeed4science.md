@@ -1,5 +1,5 @@
 ---
-title: "DeepSpeed4Science Overview and Tutorial Catalogue"
+title: "DeepSpeed4Science Overview and Tutorial"
 permalink: /deepspeed4science/
 toc: true
 toc_label: "Contents"
