@@ -80,12 +80,13 @@ def benchmark():
     ours_bw = []
     baseline_fw = []
     baseline_bw = []
+    device = get_accelerator().device_name()
     for batch_size in range(1, 17):
-        Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-        K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-        V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device="cuda", requires_grad=True)
-        bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device="cuda", requires_grad=True)
-        bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device="cuda", requires_grad=True)
+        Q = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device=device, requires_grad=True)
+        K = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device=device, requires_grad=True)
+        V = torch.randn(batch, N, seq_len, heads, dim, dtype=dtype, device=device, requires_grad=True)
+        bias1 = torch.randn(batch, N, 1, 1, seq_len, dtype=dtype, device=device, requires_grad=True)
+        bias2 = torch.randn(batch, 1, heads, seq_len, seq_len, dtype=dtype, device=device, requires_grad=True)
         # warm up
         DS4Sci_EvoformerAttention(Q, K, V, [bias1, bias2])
         with cuda_timer(ours_fw):
