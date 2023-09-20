@@ -46,7 +46,6 @@ struct BroadcastA : public BroadcastNoLoad<ThreadMap, Shape, scalar_t> {
                                     int stride)
     {
         GmemTileIterator iter({layout(0, 1)}, ptr, extent, thread_id);
-        iter.enable_mask();
         iter.load(frag);
     }
 
@@ -78,7 +77,6 @@ struct BroadcastB : public BroadcastNoLoad<ThreadMap, Shape, scalar_t> {
                                     int stride)
     {
         GmemTileIterator iter({layout(stride)}, ptr, extent, thread_id);
-        iter.enable_mask();
         iter.load(frag);
     }
 
@@ -100,7 +98,6 @@ struct AttentionBiasEpilogue {
     using ThreadMap = cutlass::transform::PitchLinearStripminedThreadMap<
         cutlass::layout::PitchLinearShape<Shape::kColumn, Shape::kRow>,
         kThreads, 1>;
-        // 128 / cutlass::sizeof_bits<scalar_t>::value>;
 
     using Broadcast1 = Broadcast1_<ThreadMap, Shape, scalar_t>;
     using Broadcast2 = Broadcast2_<ThreadMap, Shape, scalar_t>;
