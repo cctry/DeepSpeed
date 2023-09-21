@@ -39,6 +39,7 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
         major = torch.cuda.get_device_properties(0).major  #ignore-cuda
         minor = torch.cuda.get_device_properties(0).minor  #ignore-cuda
         args.append(f"-DGPU_ARCH={major}{minor}")
+        args.append("-lineinfo")
         return args
 
     def is_compatible(self, verbose=True):
