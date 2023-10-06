@@ -10,6 +10,12 @@ from deepspeed.accelerator import get_accelerator
 
 kernel_ = None
 
+def check_error(msg):
+    rt = torch.cuda.cudart()
+    status = rt.cudaProfilerStop()
+    if rt.cudaError.success != status:
+        error_str = rt.cudaGetErrorString(status)
+        raise RuntimeError(f"{msg}: {error_str}")
 
 def _attention(Q, K, V, bias1, bias2):
     assert Q.shape[-3] > 16, "seq_len must be greater than 16"
@@ -26,7 +32,15 @@ def _attention(Q, K, V, bias1, bias2):
     nq = (Q.shape[-3] + 31) // 32 * 32
     nb = np.prod(Q.shape[:-3])
     lse = torch.empty((nb, nheads, nq), dtype=torch.float32, device=Q.device)
-    kernel_.attention(Q, K, V, bias1, bias2, O, lse)
+    try:
+        check_error("before attention forward")
+        cpu_copy = [t.to('cpu', non_blocking=True) for t in [Q, K, V, bias1, bias2]]
+        kernel_.attention(Q, K, V, bias1, bias2, O, lse)
+        check_error("after attention forward")
+    except RuntimeError as e:
+        torch.save(cpu_copy, "debug_data.pt")
+        shape_str = f"Q {Q.shape}, K {K.shape}, V {V.shape}, bias1 {bias1.shape}, bias2 {bias2.shape}"
+        raise RuntimeError(f"Error in Evoformer Attention: {e} {shape_str}")
     return O, lse
 
 
@@ -46,7 +60,17 @@ def attention_bwd(dO, Q, K, V, O, lse, bias1, bias2):
     delta = torch.empty_like(lse)
     dB1 = torch.zeros_like(bias1, dtype=torch.float32)
     dB2 = torch.zeros_like(bias2, dtype=torch.float32)
-    kernel_.attention_bwd(dO, Q, K, V, O, lse, delta, bias1, bias2, dQ, dK, dV, dB1, dB2)
+    try:
+        check_error("before attention backward")
+        cpu_copy = [t.to('cpu', non_blocking=True) for t in [dO, Q, K, V, O, lse, bias1, bias2]]
+        kernel_.attention_bwd(dO, Q, K, V, O, lse, delta, bias1, bias2, dQ, dK, dV, dB1, dB2)
+        check_error("after attention backward")
+    except RuntimeError as e:
+        torch.save(cpu_copy, "debug_data.pt")
+        shape_str = f"dQ {dQ.shape}, dK {dK.shape}, dV {dV.shape}, dB1 {dB1.shape}, dB2 {dB2.shape}"
+        import sys
+        print(shape_str, file=sys.stderr)
+        raise RuntimeError(f"Error in Evoformer Attention: {e} {shape_str}")
     return dQ, dK, dV, dB1.to(dO.dtype), dB2.to(dO.dtype)
 
 
