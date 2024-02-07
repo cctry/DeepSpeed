@@ -1500,8 +1500,7 @@ struct AttentionBackwardKernel {
                         typename BiasGradEpilogueAffineRankN<ArchTag,
                                                              2,
                                                              typename MatmulDOIVJ::ThreadblockShape,
-                                                             typename DefaultGemm::Mma::Operator,
-                                                             DefaultGemm::kPartitionsK,
+                                                             DefaultGemm,
                                                              OutputOp,
                                                              OutputOp::kCount>::Epilogue;
                     cutlass::layout::AffineRankN<2> layout({0, 1});
@@ -1523,8 +1522,7 @@ struct AttentionBackwardKernel {
                     using Epilogue =
                         typename BiasGradEpilogue<ArchTag,
                                                   typename MatmulDOIVJ::ThreadblockShape,
-                                                  typename DefaultGemm::Mma::Operator,
-                                                  DefaultGemm::kPartitionsK,
+                                                  DefaultGemm,
                                                   OutputOp,
                                                   OutputOp::kCount>::Epilogue;
                     typename Epilogue::OutputTileIterator::Params params{p.num_keys};

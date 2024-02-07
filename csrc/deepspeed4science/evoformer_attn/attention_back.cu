@@ -10,6 +10,36 @@
 #include "kernel_backward.h"
 #include "transform/bias_broadcast.h"
 
+// delta = (grad_out.float() * out.float()).sum(-1).transpose(-2, -1).contiguous()
+
+template <typename scalar_t>
+__global__ __launch_bounds__(256) void compute_delta_kernel(scalar_t* grad_out,
+                                                            scalar_t* out,
+                                                            float* delta,
+                                                            int B,
+                                                            int L,
+                                                            int H,
+                                                            int D)
+{
+    // assume grad_out and out are contiguous
+    int lane_id = threadIdx.x;
+    int warp_id = blockIdx.x * blockDim.y + threadIdx.y;
+    int num_warp = gridDim.x * blockDim.y;
+    // blhd, blhd -> bhl
+    for (int i = warp_id; i < B * L * H; i += num_warp) {
+        int b = num_warp / (L * H);
+        int l = (num_warp % (L * H)) / H;
+        int h = (num_warp % (L * H)) % H;
+        float val = 0;
+        int64_t offset = b * L * H * D + l * H * D + h * D;
+        for (int j = lane_id; j < D; j += 32) {
+            val += (float)grad_out[offset + j] * (float)out[offset + j];
+        }
+        for (int k = 1; k < 32; k *= 2) { val += __shfl_down_sync(0xffffffff, val, k); }
+        if (lane_id == 0) { delta[b * L * H + h * L + l] = val; }
+    }
+}
+
 constexpr auto kBlockSizeI = 64;
 constexpr auto kBlockSizeJ = 64;
 
@@ -62,7 +92,8 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_back_i
     torch::Tensor& gb1,
     torch::Tensor& gb2)
 {
-    constexpr bool kPreload_ = arch::kMinComputeCapability >= 80;
+    constexpr bool kPreload_ =
+        arch::kMinComputeCapability >= 80 && cutlass::sizeof_bits<scalar_t>::value == 16;
     using Kernel = AttentionBackwardKernel<arch,
                                            scalar_t,     // scalar_t
                                            true,         // kIsAligned_
@@ -80,6 +111,7 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_back_i
     auto k_view = k.view({-1, seq_length, head_number, head_size});
     auto v_view = v.view({-1, seq_length, head_number, head_size});
     auto o_view = o.view({-1, seq_length, head_number, head_size});
+    int batch_size = q_view.size(0);
     auto do_view = go.view({-1, seq_length, head_number, head_size});
     auto dk_view = gk.view({-1, seq_length, head_number, head_size});
     auto dv_view = gv.view({-1, seq_length, head_number, head_size});
@@ -98,7 +130,14 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_back_i
     auto delta_ptr = reinterpret_cast<float*>(delta.data_ptr<float>());
     auto bias1_ptr = reinterpret_cast<scalar_t*>(bias1.data_ptr<torch_scalar_t>());
     auto bias2_ptr = reinterpret_cast<scalar_t*>(bias2.data_ptr<torch_scalar_t>());
-    static_assert(Kernel::kKernelComputesDelta, "Kernel must compute delta");
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    // static_assert(Kernel::kKernelComputesDelta, "Kernel must compute delta");
+    if constexpr (Kernel::kKernelComputesDelta) {
+        auto nblk = (batch_size * seq_length * head_number + 7) / 8;
+        auto nthd = dim3(32, 8);
+        compute_delta_kernel<<<nblk, nthd, 0, stream>>>(
+            do_ptr, o_ptr, delta_ptr, batch_size, seq_length, head_number, head_size);
+    }
 
     typename Kernel::Params p;
     p.query_ptr = q_ptr;
@@ -161,7 +200,7 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_back_i
     size_t smem_bytes = sizeof(typename Kernel::SharedStorage);
     cudaFuncSetAttribute(kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem_bytes));
     if (!Kernel::check_supported(p)) { throw std::runtime_error("Unsupported parameters"); }
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
 }
 
 #define CODE(scalar_t, torch_scalar_t)                                           \
@@ -213,6 +252,6 @@ void attention_back_impl(torch::Tensor& go,
                          torch::Tensor& gb2)
 {
     cudaDeviceProp* prop = at::cuda::getCurrentDeviceProperties();
-    DISPATCH_ARCHTAG(prop->major * 10 + prop->minor,
-                     DISPATCH_TYPES(q, { CODE(scalar_t, torch_scalar_t); }));
+    int cc = prop->major * 10 + prop->minor;
+    DISPATCH_ARCHTAG(cc, DISPATCH_TYPES(q, { CODE(scalar_t, torch_scalar_t); }));
 }

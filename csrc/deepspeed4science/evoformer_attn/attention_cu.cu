@@ -74,6 +74,8 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_impl_t
     auto bias1_ptr = reinterpret_cast<scalar_t*>(bias1.data_ptr<torch_scalar_t>());
     auto bias2_ptr = reinterpret_cast<scalar_t*>(bias2.data_ptr<torch_scalar_t>());
 
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+
     typename Attention::Params p;
     {  // set parameters
         p.query_ptr = q_ptr;
@@ -115,7 +117,7 @@ typename std::enable_if<CheckArch<arch, scalar_t>::value>::type attention_impl_t
         cudaFuncSetAttribute(kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
     }
     if (!Attention::check_supported(p)) { throw std::runtime_error("Parameters not supported"); }
-    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
 }
 
 #define CODE(scalar_t, torch_scalar_t)                                                          \

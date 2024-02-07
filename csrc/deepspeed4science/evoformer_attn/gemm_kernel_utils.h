@@ -38,6 +38,21 @@
 
 #include <type_traits>
 #include "cutlass/arch/mma.h"
+#include "cutlass/gemm/warp/mma_simt.h"
+
+template <int N>
+struct PrintCompileTimeValue {
+    constexpr static int value = 0;
+};
+
+template <typename DefaultGemm_, typename Arch>
+struct is_simt {
+    using Mma = typename DefaultGemm_::Mma;
+    using WarpMmaTensorOp_ = typename Mma::Operator;
+    using Type = typename WarpMmaTensorOp_::ElementA;
+    static const bool value =
+        (cutlass::platform::is_same<Type, float>::value) && (Arch::kMinComputeCapability < 80);
+};
 
 template <typename arch, typename scalar_t>
 struct CheckArch {
@@ -92,6 +107,10 @@ struct CheckArch {
         } else if (tensor.scalar_type() == at::ScalarType::BFloat16) {            \
             using scalar_t = cutlass::bfloat16_t;                                 \
             using torch_scalar_t = at::BFloat16;                                  \
+            func;                                                                 \
+        } else if (tensor.scalar_type() == at::ScalarType::Float) {               \
+            using scalar_t = float;                                               \
+            using torch_scalar_t = float;                                         \
             func;                                                                 \
         } else {                                                                  \
             EVOFORMER_CHECK(false, "Only fp16 and bf16 supported at the moment"); \
